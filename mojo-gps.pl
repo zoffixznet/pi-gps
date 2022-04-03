@@ -4,12 +4,13 @@ use strict;
 use warnings;
 use 5.020;
 
+use lib qw/lib/;
+use ZofGPS::GPSFrame;
+use ZofGPS::Continuity;
+
 use Mojolicious::Lite -signatures;
 
 use GPS::NMEA;
-use Time::HiRes qw//;
-use Math::Trig qw/atan/;
-
 my $GPS = GPS::NMEA->new(
     Port => '/dev/serial0',
     Baud => 9600, #19200, #38400, #115200, #9600,
@@ -19,71 +20,14 @@ get '/' => sub ($c) {
   $c->render(template => 'index');
 };
 
+my $Continuity = ZofGPS::Continuity->new;
 websocket '/gps' => sub ($c) {
     $c->on(message => sub ($c, $msg) {
-        my $data = _get_gps();
-        use Acme::Dump::And::Dumper;
-        # warn DnD $data;
-        $c->send({json => $data});
+        $GPS->parse;
+        $Continuity->add_frame(ZofGPS::GPSFrame->new($GPS->{NMEADATA}));
+        $c->send({json => $Continuity->report});
     });
 };
-
-#sub _get_gps {
-#     open my $fh, "<", "course" or die $!;
-#     my $deg = <$fh>;
-# }
-
-my ($last_lon, $last_lat) = (0, 0);
-sub _get_gps {
-    $GPS->parse;
-    my $data = $GPS->{NMEADATA};
-    use Acme::Dump::And::Dumper;
-    warn DnD [ $data ];
-    my $res = +{
-        stamp  => Time::HiRes::time,
-        speed  => ($data->{speed_over_ground}//0)*1.60934, # mph -> kmh
-        course => $data->{course_made_good},
-        ns     => $data->{lat_NS},
-        ew     => $data->{lon_EW},
-        lon    => $data->{lon_ddmm},
-        lat    => $data->{lat_ddmm},
-    };
-    $_ = _arcm_to_deg($_) for @$res{qw/lon  lat  course/};
-
-    if ($res->{ns} and $res->{ns} eq 'S' and length $res->{lat}) {
-        $res->{lat} *= -1;
-    }
-    if ($res->{ew} and $res->{ew} eq 'W' and length $res->{lon}) {
-        $res->{lon} *= -1;
-    }
-    if (length $res->{lat} and length $res->{lon}) {
-        my $dy = $last_lat - $res->{lat};
-        my $dx = $last_lon - $res->{lon};
-        $last_lat = $res->{lat};
-        $last_lon = $res->{lon};
-
-        $res->{dy} = $dy;
-        $res->{dx} = $dx;
-        my $deg = 180 / 3.1415926535; # 180/pi = rads to deg
-        $res->{compass} =
-              $dx == 0 && $dy == 0 ? 0
-            : $dx == 0 ? ($dy > 0 ? 0  : 180)
-            : $dy == 0 ? ($dx > 0 ? 90 : 270)
-            : $dx > 0 && $dy > 0 ? atan( $dx /  $dy) * $deg       # Q1
-            : $dx > 0 && $dy < 0 ? atan(-$dy /  $dx) * $deg + 90  # Q2
-            : $dx < 0 && $dy < 0 ? atan(-$dx / -$dy) * $deg + 180 # Q3
-            : $dx < 0 && $dy > 0 ? atan(-$dy /  $dx) * $deg + 270 : 0
-        ;
-    }
-
-    return $res;
-}
-
-sub _arcm_to_deg {
-    my $v = shift || 0;
-    int($v) + ($v - int($v)) * 1.66666667;
-}
-
 
 app->start;
 __DATA__
@@ -96,9 +40,9 @@ __DATA__
     ws.onmessage = function (event) {
         var data = JSON.parse(event.data);
 
-        byid('lag').innerHTML = ((data.stamp||0)- last_stamp).toFixed(2)+'s';
-        last_stamp = data.stamp||0;
-        
+        byid('lag').innerHTML = ((data.time||0)- last_stamp).toFixed(2)+'s';
+        last_stamp = data.time||0;
+
         if (data.compass) {
           byid('needle').style.transform
             = 'rotate(' + (data.compass||0) + 'deg)';
