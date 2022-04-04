@@ -66,7 +66,7 @@ websocket '/gps' => sub ($c) {
 
         $tpv->{$_} //= 0 for qw/speed climb lat lon altMSL mode/;
 
-        my @sats = values $GPS->satellites->%*;
+        my @sats = values %{$GPS->satellites || {}};
 
         $c->send({json => {
             time    => Time::HiRes::time,
@@ -99,12 +99,12 @@ sub _get_wifi {
     while (my @lines = $it->()) { push @nets, +{ map split(/:\s+/), @lines }}
 
     my %secs;
-    $secs{$_->{SECURITY}}++ for @nets;
+    $secs{$_->{SECURITY}//'unknown'}++ for @nets;
     my @secs = map +{
             type  => $_,
             count => $secs{$_}
         }, sort { $secs{$b} <=> $secs{$a} } keys %secs;
-    my @open = grep $_->{SECURITY} eq '--', @nets;
+    my @open = grep +($_->{SECURITY}//'') eq '--', @nets;
     +{
         secs     => \@secs,
         n_open   => scalar(@open),
