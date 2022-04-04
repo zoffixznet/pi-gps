@@ -22,6 +22,23 @@ get '/' => sub ($c) {
         return $c->redirect_to('/');
     }
 
+    if ($c->param('show_kbd')) {
+        system qw{dbus-send --type=method_call --print-reply --dest=org.onboard.Onboard /org/onboard/Onboard/Keyboard org.onboard.Onboard.Keyboard.Show};
+        return $c->redirect_to('/');
+    }
+    if ($c->param('hide_kbd')) {
+        system qw{dbus-send --type=method_call --print-reply --dest=org.onboard.Onboard /org/onboard/Onboard/Keyboard org.onboard.Onboard.Keyboard.Hide};
+        return $c->redirect_to('/');
+    }
+
+    if ($c->param('shutdown')) {
+        local $ENV{DISPLAY} = ':0.0';
+        system qw/wmctrl -c Firefox/;
+        sleep 1;
+        system qw/shutdown -h now/;
+        return $c->redirect_to('/');
+    }
+
     $c->render(template => 'index');
 };
 
@@ -119,65 +136,6 @@ __DATA__
 
 @@ index.html.ep
 <title>ZofTrack</title>
-<script>
-    var last_stamp = 0;
-    function byid(id) { return document.getElementById(id) }
-    const ws = new WebSocket('<%= url_for("gps")->to_abs %>');
-    ws.onmessage = function (event) {
-        var i, l;
-        var data = JSON.parse(event.data);
-
-        byid('info-lag').innerHTML
-            = 'LAG: ' + ((data.time||0)- last_stamp).toFixed(2) + 's';
-        last_stamp = data.time||0;
-
-        byid('needle').style.transform
-            = 'rotate(' + data.compass + 'deg)';
-        byid('needle-mag').style.transform
-            = 'rotate(' + data.compass_mag + 'deg)';
-        byid('info-angle-icon').style.transform
-            = 'rotate(' + data.angle + 'deg)';
-
-        byid('info-sats').innerHTML = '⬤'.repeat(data.sats_used)
-            + '◯'.repeat(data.sats_unused);
-
-        byid('info-speed').innerHTML = '' + data.speed + 'km/h';
-        byid('info-climb').innerHTML = '↕' + data.climb + 'm/s';
-        byid('info-alt').innerHTML = '↑' + data.alt + 'm';
-        byid('info-lat').innerHTML   = 'LAT: '   + data.lat;
-        byid('info-lon').innerHTML   = 'LON: '   + data.lon;
-        byid('info-angle').innerHTML  = '∠'   + data.angle + '°';
-        byid('info-mode').innerHTML  = 'Mode: '   + data.mode;
-
-        byid('wifi-n').innerHTML  = 'Open: '
-            + data.wifi.n_open + '/' +  data.wifi.n_all;
-
-        var wifi_open_html = '<table>';
-        for (i = 0, l = data.wifi.open_nets.length; i < l; i++) {
-            var net = data.wifi.open_nets[i];
-            wifi_open_html
-                += '<tr><td>' + net.SSID + '</td><td>'
-                + net.BARS + '</td><td>' + net.SECURITY + '</td></tr>';
-        }
-        byid('wifi-open').innerHTML = wifi_open_html + '</table>';
-
-        var wifi_all_html = '<table>';
-        for (i = 0, l = data.wifi.all_nets.length; i < l; i++) {
-            var net = data.wifi.all_nets[i];
-            wifi_all_html
-                += '<tr><td>' + net.SSID + '</td><td>'
-                + net.BARS + '</td><td>' + net.SECURITY + '</td></tr>';
-        }
-        byid('wifi-all').innerHTML = wifi_all_html + '</table>';
-
-
-        byid('debug').innerHTML = event.data;
-
-    };
-    ws.onopen = function (event) {
-        setInterval(function() { ws.send('poll') }, 1000)
-    };
-</script>
 <!-- meta http-equiv="refresh" content="3" -->
 <style>
     html, body {
@@ -209,6 +167,25 @@ __DATA__
         top: 0;
         background: lightblue;
     }
+
+    #button-shutdown {
+        font-size: 200%;
+        color: #fff;
+        text-decoration: none!important;
+        background: #f00;
+        position: absolute;
+        left: 0;
+        top: 135px;
+        display: block;
+        line-height: 40px;
+        height: 40px;
+        width: 40px;
+        padding-right: 5px;
+        letter-spacing: -.55em;
+        font-family: sans-serif;
+        border: 1px solid #000;
+    }
+
     #brightness {
         width: 399px;
         height: 40px;
@@ -218,7 +195,7 @@ __DATA__
         background: #dfd;
     }
     #brightness a {
-        width: 24.5%;
+        width: calc(100%/6 - 1px);
         font-size: 200%;
         color: black;
         text-decoration: none!important;
@@ -404,6 +381,8 @@ __DATA__
 
 <div id="container">
     <div id="gps">
+        <a href="?shutdown=1" id="button-shutdown"
+          class="ajax-button">IO</a>
         <div id="info-sats"></div>
         <div id="info-speed"></div>
         <div id="info-climb"></div>
@@ -426,10 +405,16 @@ __DATA__
     </div>
 
     <div id="brightness"
-      ><a href="?brightness=9"  id="brightness-night">★</a
-      ><a href="?brightness=15"  id="brightness-night">☆</a
-      ><a href="?brightness=80" id="brightness-cloudy">☁</a
-      ><a href="?brightness=255" id="brightness-sunny">☀</a
+      ><a href="?show_kbd=1"     id="show-kbd" class="ajax-button">✓⌨</a
+      ><a href="?hide_kbd=1"     id="hide-kbd" class="ajax-button">✘⌨</a
+      ><a href="?brightness=9"   id="brightness-night"
+        class="ajax-button">★</a
+      ><a href="?brightness=15"  id="brightness-night"
+        class="ajax-button">☆</a
+      ><a href="?brightness=80"  id="brightness-cloudy"
+        class="ajax-button">☁</a
+      ><a href="?brightness=255" id="brightness-sunny"
+        class="ajax-button">☀</a
     ></div>
     <div id="wifi">
         <div id="wifi-n"></div>
@@ -439,3 +424,91 @@ __DATA__
 
     <div id="debug"></div>
 </div>
+
+
+<script>
+    if ( ! window.fullScreen) {
+      document.documentElement.requestFullscreen()
+        .catch(error =>  console.log(error));
+    }
+
+    var btns = document.getElementsByClassName('ajax-button');
+    for (var i = 0, l = btns.length; i < l; i++) {
+      btns[i].onclick = function(e) {
+          e.preventDefault();
+          callAjax(this.href);
+          this.blur();
+          return false;
+      }
+    }
+
+    var last_stamp = 0;
+    function byid(id) { return document.getElementById(id) }
+    const ws = new WebSocket('<%= url_for("gps")->to_abs %>');
+    ws.onmessage = function (event) {
+        var i, l;
+        var data = JSON.parse(event.data);
+
+        byid('info-lag').innerHTML
+            = 'LAG: ' + ((data.time||0)- last_stamp).toFixed(2) + 's';
+        last_stamp = data.time||0;
+
+        byid('needle').style.transform
+            = 'rotate(' + data.compass + 'deg)';
+        byid('needle-mag').style.transform
+            = 'rotate(' + data.compass_mag + 'deg)';
+        byid('info-angle-icon').style.transform
+            = 'rotate(' + data.angle + 'deg)';
+
+        byid('info-sats').innerHTML = '⬤'.repeat(data.sats_used)
+            + '◯'.repeat(data.sats_unused);
+
+        byid('info-speed').innerHTML = '' + data.speed + 'km/h';
+        byid('info-climb').innerHTML = '↕' + data.climb + 'm/s';
+        byid('info-alt').innerHTML = '↑' + data.alt + 'm';
+        byid('info-lat').innerHTML   = 'LAT: '   + data.lat;
+        byid('info-lon').innerHTML   = 'LON: '   + data.lon;
+        byid('info-angle').innerHTML  = '∠'   + data.angle + '°';
+        byid('info-mode').innerHTML  = 'Mode: '   + data.mode;
+
+        byid('wifi-n').innerHTML  = 'Open: '
+            + data.wifi.n_open + '/' +  data.wifi.n_all;
+
+        var wifi_open_html = '<table>';
+        for (i = 0, l = data.wifi.open_nets.length; i < l; i++) {
+            var net = data.wifi.open_nets[i];
+            wifi_open_html
+                += '<tr><td>' + net.SSID + '</td><td>'
+                + net.BARS + '</td><td>' + net.SECURITY + '</td></tr>';
+        }
+        byid('wifi-open').innerHTML = wifi_open_html + '</table>';
+
+        var wifi_all_html = '<table>';
+        for (i = 0, l = data.wifi.all_nets.length; i < l; i++) {
+            var net = data.wifi.all_nets[i];
+            wifi_all_html
+                += '<tr><td>' + net.SSID + '</td><td>'
+                + net.BARS + '</td><td>' + net.SECURITY + '</td></tr>';
+        }
+        byid('wifi-all').innerHTML = wifi_all_html + '</table>';
+
+
+        byid('debug').innerHTML = event.data;
+
+    };
+    ws.onopen = function (event) {
+        setInterval(function() { ws.send('poll') }, 1000)
+    };
+
+    function callAjax(url, callback){
+        var xmlhttp;
+        xmlhttp = new XMLHttpRequest();
+        xmlhttp.onreadystatechange = function(){
+            if (callback && xmlhttp.readyState == 4 && xmlhttp.status == 200){
+                callback(xmlhttp.responseText);
+            }
+        }
+        xmlhttp.open("GET", url, true);
+        xmlhttp.send();
+    }
+</script>
