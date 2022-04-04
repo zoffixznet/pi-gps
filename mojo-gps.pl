@@ -12,6 +12,8 @@ use List::MoreUtils qw/natatime/;
 use Encode qw/decode_utf8/;
 
 my $GPS = GPSD::Parse->new;
+my $HID_KBD_AFTER_START = 0;
+my $HIDE_KBD_AFTER = time + 10;
 
 get '/' => sub ($c) {
     my $br = $c->param('brightness');
@@ -23,11 +25,11 @@ get '/' => sub ($c) {
     }
 
     if ($c->param('show_kbd')) {
-        system qw{dbus-send --type=method_call --print-reply --dest=org.onboard.Onboard /org/onboard/Onboard/Keyboard org.onboard.Onboard.Keyboard.Show};
+        show_keyboard();
         return $c->redirect_to('/');
     }
     if ($c->param('hide_kbd')) {
-        system qw{dbus-send --type=method_call --print-reply --dest=org.onboard.Onboard /org/onboard/Onboard/Keyboard org.onboard.Onboard.Keyboard.Hide};
+        hide_keyboard();
         return $c->redirect_to('/');
     }
 
@@ -39,12 +41,27 @@ get '/' => sub ($c) {
         return $c->redirect_to('/');
     }
 
+    if ($c->param('reboot')) {
+        local $ENV{DISPLAY} = ':0.0';
+        system qw/wmctrl -c Firefox/;
+        sleep 1;
+        system qw/reboot/;
+        return $c->redirect_to('/');
+    }
+
+
     $c->render(template => 'index');
 };
 
 websocket '/gps' => sub ($c) {
     $c->on(message => sub ($c, $msg) {
         $GPS->poll;
+        if (not $HID_KBD_AFTER_START and time > $HIDE_KBD_AFTER) {
+            # We do this timed stuff, because `onboard` starts a bit late
+            # so hiding it from shell start script doesn't quite work
+            $HID_KBD_AFTER_START = 1;
+            hide_keyboard();
+        }
         my $tpv = $GPS->tpv;
         use Acme::Dump::And::Dumper;
         warn DnD [ $tpv ];
@@ -108,6 +125,14 @@ websocket '/gps' => sub ($c) {
 };
 
 app->start;
+
+sub hide_keyboard {
+    system qw{dbus-send --type=method_call --print-reply --dest=org.onboard.Onboard /org/onboard/Onboard/Keyboard org.onboard.Onboard.Keyboard.Hide};
+}
+sub show_keyboard {
+    system qw{dbus-send --type=method_call --print-reply --dest=org.onboard.Onboard /org/onboard/Onboard/Keyboard org.onboard.Onboard.Keyboard.Show};
+}
+
 
 sub _get_wifi {
     my $it = natatime 3, split "\n",
@@ -182,6 +207,38 @@ __DATA__
         width: 40px;
         padding-right: 5px;
         letter-spacing: -.55em;
+        font-family: sans-serif;
+        border: 1px solid #000;
+    }
+
+    #button-reload-page {
+        font-size: 200%;
+        color: #000;
+        text-decoration: none!important;
+        background: #ccf;
+        position: absolute;
+        left: 0;
+        top: 260px;
+        display: block;
+        line-height: 40px;
+        height: 40px;
+        width: 40px;
+        font-family: sans-serif;
+        border: 1px solid #000;
+    }
+
+    #button-reboot {
+        font-size: 200%;
+        color: #000;
+        text-decoration: none!important;
+        background: #cc0;
+        position: absolute;
+        left: 0;
+        top: 390px;
+        display: block;
+        line-height: 40px;
+        height: 40px;
+        width: 40px;
         font-family: sans-serif;
         border: 1px solid #000;
     }
@@ -383,6 +440,12 @@ __DATA__
     <div id="gps">
         <a href="?shutdown=1" id="button-shutdown"
           class="ajax-button">IO</a>
+
+        <a href="#" id="button-reload-page"
+            onclick="window.location.reload()">⟳</a>
+
+        <a href="?reboot=1"   id="button-reboot"
+          class="ajax-button">↻</a>
         <div id="info-sats"></div>
         <div id="info-speed"></div>
         <div id="info-climb"></div>
@@ -427,10 +490,10 @@ __DATA__
 
 
 <script>
-    if ( ! window.fullScreen) {
+    //if ( ! window.fullScreen) {
       document.documentElement.requestFullscreen()
         .catch(error =>  console.log(error));
-    }
+    //}
 
     var btns = document.getElementsByClassName('ajax-button');
     for (var i = 0, l = btns.length; i < l; i++) {
