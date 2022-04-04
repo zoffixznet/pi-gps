@@ -35,7 +35,7 @@ get '/' => sub ($c) {
 
     if ($c->param('shutdown')) {
         local $ENV{DISPLAY} = ':0.0';
-        system qw/wmctrl -c Firefox/;
+        system qw/wmctrl -c Firefox/ for 1..3;
         sleep 1;
         system qw/shutdown -h now/;
         return $c->redirect_to('/');
@@ -43,7 +43,7 @@ get '/' => sub ($c) {
 
     if ($c->param('reboot')) {
         local $ENV{DISPLAY} = ':0.0';
-        system qw/wmctrl -c Firefox/;
+        system qw/wmctrl -c Firefox/ for 1..3;
         sleep 1;
         system qw/reboot/;
         return $c->redirect_to('/');
