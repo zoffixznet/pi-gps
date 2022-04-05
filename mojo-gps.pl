@@ -14,6 +14,7 @@ use Encode qw/decode_utf8/;
 
 use ZofSensor::Accel;
 use ZofSensor::PiSugar2Pro;
+use ZofSensor::HT16K33LED8x8Matrix;
 
 my $GPS = GPSD::Parse->new;
 my $HID_KBD_AFTER_START = 0;
@@ -21,6 +22,7 @@ my $HIDE_KBD_AFTER = time + 10;
 
 my $ACCEL = ZofSensor::Accel->new;
 my $SUGAR = ZofSensor::PiSugar2Pro->new;
+my $MATRIX = ZofSensor::HT16K33LED8x8Matrix->new;
 
 get '/' => sub ($c) {
     $ACCEL->save_correction;

@@ -1,6 +1,6 @@
 package ZofSensor::PiSugar2Pro;
 
-# keyestudio "accelerometer" sensor
+# PiSugar 2 Pro battery UPS pack
 
 use Mojo::Base -base;
 use 5.020;
@@ -85,6 +85,12 @@ sub _read_battery_percent {
         { 3.47788995 => 28 },
         { 3.46285115 => 25 },
         { 3.4287453  => 19 },
+        { 3.39302815 => 16 },
+        { 3.3771837  => 14 },
+        { 3.34791175 => 11 },
+        { 3.2993042  => 4  },
+        { 3.158584   => 1  },
+        { 3.04015345 => 0  },
         { 0          => 0  },
     );
 

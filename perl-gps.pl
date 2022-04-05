@@ -7,6 +7,27 @@ use lib qw/lib/;
 # use GPSD::Parse;
 use Time::HiRes qw//;
 use List::MoreUtils qw/natatime/;
+
+#use ZofSensor::HT16K33LED8x8Matrix;
+
+# my $m = ZofSensor::HT16K33LED8x8Matrix->new;
+
+# for my $n (1..100) {
+#     for my $x (1..8) {
+#         for my $y (1..8) {
+#             # $m->clear;
+#             # $m->set_one($n % 2, $x, $y);
+#             $m->set_col($n % 2, $x);
+#             Time::HiRes::sleep(.01);
+#         }
+#     }
+# }
+
+# $m->clear;
+# # sleep 2;
+# # $m->turn_off;
+
+# __END__
 use ZofSensor::PiSugar2Pro;
 
 my $sugar = ZofSensor::PiSugar2Pro->new;
