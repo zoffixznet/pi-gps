@@ -4,16 +4,21 @@ use strict;
 use warnings;
 use 5.020;
 
+use constant ACCEL_ADDR => 0x1d;
+
 use lib qw/lib/;
 use GPSD::Parse;
 use Math::Trig qw/atan/;
 use Mojolicious::Lite -signatures;
 use List::MoreUtils qw/natatime/;
 use Encode qw/decode_utf8/;
+use Device::SMBus;
 
 my $GPS = GPSD::Parse->new;
 my $HID_KBD_AFTER_START = 0;
 my $HIDE_KBD_AFTER = time + 10;
+
+my $ACCEL = _setup_accel();
 
 get '/' => sub ($c) {
     my $br = $c->param('brightness');
@@ -63,8 +68,8 @@ websocket '/gps' => sub ($c) {
             hide_keyboard();
         }
         my $tpv = $GPS->tpv;
-        use Acme::Dump::And::Dumper;
-        warn DnD [ $tpv ];
+        # use Acme::Dump::And::Dumper;
+        # warn DnD [ $tpv ];
 
           #         {
           #   'altMSL' => '218.9',
@@ -120,6 +125,7 @@ websocket '/gps' => sub ($c) {
             sats_unused => scalar(grep ! $_->{used}, @sats),
 
             wifi => _get_wifi(),
+            accel => _read_accel($ACCEL),
         }});
     });
 };
@@ -156,6 +162,48 @@ sub _get_wifi {
     }
 }
 
+sub _setup_accel {
+    my $dev = Device::SMBus->new(
+        I2CBusDevicePath => '/dev/i2c-1',
+        I2CDeviceAddress => ACCEL_ADDR,
+    );
+
+    # MMA8452Q address, 0x1C(28)
+    # Select Control register, 0x2A(42)
+    #       0x00(00)    StandBy mode
+    #bus.write_byte_data(ACCEL_ADDR, 0x2A, 0x00)
+    $dev->writeByteData(0x2A, 0x00);
+
+    # MMA8452Q address, 0x1C(28)
+    # Select Configuration register, 0x0E(14)
+    #       0x00(00)    Set range to +/- 2g
+    #bus.write_byte_data(0x1C, 0x0E, 0x00)
+    $dev->writeByteData(0x0E, 0x00); #apparently 0x00 = -/+2G, 0x01 = 4G, 0x10 = 8G
+
+    # MMA8452Q address, 0x1C(28)
+    # Select Control register, 0x2A(42)
+    #       0x01(01)    Active mode
+    #bus.write_byte_data(0x1C, 0x2A, 0x01)
+    $dev->writeByteData(0x2A, 0x01);
+
+    $dev
+}
+
+sub _read_accel {
+    my ($dev) = @_;
+    # MMA8452Q address, 0x1C(28)
+    # Read data back from 0x00(0), 7 bytes
+    # Status register, X-Axis MSB, X-Axis LSB, Y-Axis MSB, Y-Axis LSB, Z-Axis MSB, Z-Axis LSB
+    #data = bus.read_i2c_block_data(0x1C, 0x00, 7)
+    my ($status, $xm, $xl, $ym, $yl, $zm, $zl) = $dev->readBlockData(0x00,7);
+
+    my $x = ($xm*256+$xl)/16; $x -= 4096 if $x > 2047;
+    my $y = ($ym*256+$yl)/16; $y -= 4096 if $y > 2047;
+    my $z = ($zm*256+$zl)/16; $z -= 4096 if $z > 2047;
+    $_ /= 1000 for $x, $y, $z;
+
+    +{ x => $x, y => $y, z => $z };
+}
 
 __DATA__
 
@@ -409,6 +457,19 @@ __DATA__
       background: red;
     }
 
+    #accel {
+        position: absolute;
+        display: inline-block;
+        left: 112px;
+        height: 160px;
+        width: 160px;
+        bottom: 102px;
+        background: none;
+        border-radius: 50%;
+        border: 10px solid #00d;
+        z-index: 20;
+    }
+
     #angle {
       position: absolute;
       display: inline-block;
@@ -452,6 +513,8 @@ __DATA__
         <div id="info-lat"></div>
         <div id="info-lon"></div>
         <div id="info-alt"></div>
+
+        <div id="accel"></div>
 
         <div id="angle">
             <div id="info-angle"></div>
@@ -534,6 +597,10 @@ __DATA__
         byid('info-angle').innerHTML  = '∠'   + data.angle + '°';
         byid('info-mode').innerHTML  = 'Mode: '   + data.mode;
 
+        // marginTop did not work apparently because we use `bottom`
+        byid('accel').style.marginBottom  = (data.accel.x*60) + 'px';
+        byid('accel').style.marginLeft    = (data.accel.y*-60) + 'px';
+
         byid('wifi-n').innerHTML  = 'Open: '
             + data.wifi.n_open + '/' +  data.wifi.n_all;
 
@@ -555,12 +622,12 @@ __DATA__
         }
         byid('wifi-all').innerHTML = wifi_all_html + '</table>';
 
-
         byid('debug').innerHTML = event.data;
 
+        ws.send('poll')
     };
     ws.onopen = function (event) {
-        setInterval(function() { ws.send('poll') }, 1000)
+        ws.send('poll')
     };
 
     function callAjax(url, callback){
