@@ -15,6 +15,7 @@ use Encode qw/decode_utf8/;
 use ZofSensor::Accel;
 use ZofSensor::PiSugar2Pro;
 use ZofSensor::HT16K33LED8x8Matrix;
+use ZofSensor::ActiveBuzzer;
 
 my $GPS = GPSD::Parse->new;
 my $HID_KBD_AFTER_START = 0;
@@ -23,6 +24,7 @@ my $HIDE_KBD_AFTER = time + 10;
 my $ACCEL = ZofSensor::Accel->new;
 my $SUGAR = ZofSensor::PiSugar2Pro->new;
 my $MATRIX = ZofSensor::HT16K33LED8x8Matrix->new;
+my $BUZZER = ZofSensor::ActiveBuzzer->new;
 
 get '/' => sub ($c) {
     $ACCEL->save_correction;
@@ -115,6 +117,9 @@ websocket '/gps' => sub ($c) {
         $ACCEL->save_correction
             if $hv < 1/(18/5) and ($tpv->{mode}||0) > 1;
 
+        my $accel_data = $ACCEL->read;
+        $accel_data->{x} < -.5 ? $BUZZER->buzz_on : $BUZZER->buzz_off;
+
         my @sats = values %{$GPS->satellites || {}};
 
         $c->send({json => {
@@ -135,7 +140,7 @@ websocket '/gps' => sub ($c) {
             sats_unused => scalar(grep ! $_->{used}, @sats),
 
             wifi => _get_wifi(),
-            accel => $ACCEL->read,
+            accel => $accel_data,
             sugar => $SUGAR->read,
         }});
     });

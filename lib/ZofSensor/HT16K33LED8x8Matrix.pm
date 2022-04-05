@@ -57,7 +57,7 @@ sub _setup_matrix {
     $dev->writeByte(0x81);
 
     # "sets the brightness level – in this case, leaving the brightness to the dimmest setting, P0, P1, P2, P3 are all zero in the “digital dimming data input”.  Use a different value instead of 0 in the 0xe0 value – e.g. 0xef would be the brightest setting (all 1s)."
-    $dev->writeByte(0xe0);
+    $dev->writeByte(0xef); #(0xe0);
     $self->_dev($dev);
     $self->_print_matrix;
 }

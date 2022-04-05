@@ -8,19 +8,39 @@ use lib qw/lib/;
 use Time::HiRes qw//;
 use List::MoreUtils qw/natatime/;
 
-#use ZofSensor::HT16K33LED8x8Matrix;
+use ZofSensor::ActiveBuzzer;
+my $buzz = ZofSensor::ActiveBuzzer->new;
+$buzz->buzz_off;
 
-# my $m = ZofSensor::HT16K33LED8x8Matrix->new;
+
+# use HiPi qw( :rpi );
+# use HiPi::GPIO;
+# my $header = HiPi::GPIO->new;
+# # set GPIO_17 as an output pin
+# $header->set_pin_mode( 26, RPI_MODE_OUTPUT  );
+# # or without constants
+# $header->set_pin_level( 26, RPI_HIGH );
+# sleep 2;
+# # or without constants
+# $header->set_pin_level( 26, RPI_LOW );
+
+
+__END__
+
+use ZofSensor::HT16K33LED8x8Matrix;
+
+my $m = ZofSensor::HT16K33LED8x8Matrix->new;
 
 # for my $n (1..100) {
-#     for my $x (1..8) {
-#         for my $y (1..8) {
-#             # $m->clear;
-#             # $m->set_one($n % 2, $x, $y);
-#             $m->set_col($n % 2, $x);
-#             Time::HiRes::sleep(.01);
-#         }
-#     }
+    for my $x (1..8) {
+        # for my $y (1..8) {
+            # $m->clear;
+            # $m->set_one($n % 2, $x, $y);
+            # $m->set_col($n % 2, $x);
+            $m->set_col(1, $x);
+            Time::HiRes::sleep(.01);
+        # }
+    }
 # }
 
 # $m->clear;
