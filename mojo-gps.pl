@@ -4,23 +4,24 @@ use strict;
 use warnings;
 use 5.020;
 
-use constant ACCEL_ADDR => 0x1d;
-
 use lib qw/lib/;
 use GPSD::Parse;
 use Math::Trig qw/atan/;
 use Mojolicious::Lite -signatures;
 use List::MoreUtils qw/natatime/;
+use Time::HiRes qw//;
 use Encode qw/decode_utf8/;
-use Device::SMBus;
+
+use ZofSensor::Accel;
 
 my $GPS = GPSD::Parse->new;
 my $HID_KBD_AFTER_START = 0;
 my $HIDE_KBD_AFTER = time + 10;
 
-my $ACCEL = _setup_accel();
+my $ACCEL = ZofSensor::Accel->new;
 
 get '/' => sub ($c) {
+    $ACCEL->save_correction;
     my $br = $c->param('brightness');
     if ($br and $br =~ /^\d+$/) {
         open my $fh, '>', '/sys/class/backlight/rpi_backlight/brightness'
@@ -97,13 +98,18 @@ websocket '/gps' => sub ($c) {
           #   'epx' => '74.082'
           # }
 
+        $tpv->{$_} //= 0 for qw/speed climb lat lon altMSL mode/;
+
         my $hv = $tpv->{speed}//0;
         my $vv = $tpv->{climb}//0;
         my $deg = 180 / 3.1415926535; # 180/pi = rads to deg
         # round down <10km/h horizontal velocity, to account for noise:
         my $angle = $hv < 10/(18/5) ? 0 : atan($vv/$hv)*$deg;
 
-        $tpv->{$_} //= 0 for qw/speed climb lat lon altMSL mode/;
+        # re-callibrate accelerometer offset, if our speed is less than 1km/h
+        # and we have a GPS fix
+        $ACCEL->save_correction
+            if $hv < 1/(18/5) and ($tpv->{mode}||0) > 1;
 
         my @sats = values %{$GPS->satellites || {}};
 
@@ -125,7 +131,7 @@ websocket '/gps' => sub ($c) {
             sats_unused => scalar(grep ! $_->{used}, @sats),
 
             wifi => _get_wifi(),
-            accel => _read_accel($ACCEL),
+            accel => $ACCEL->read,
         }});
     });
 };
@@ -160,49 +166,6 @@ sub _get_wifi {
         all_nets  => \@nets,
         n_all     => scalar(@nets),
     }
-}
-
-sub _setup_accel {
-    my $dev = Device::SMBus->new(
-        I2CBusDevicePath => '/dev/i2c-1',
-        I2CDeviceAddress => ACCEL_ADDR,
-    );
-
-    # MMA8452Q address, 0x1C(28)
-    # Select Control register, 0x2A(42)
-    #       0x00(00)    StandBy mode
-    #bus.write_byte_data(ACCEL_ADDR, 0x2A, 0x00)
-    $dev->writeByteData(0x2A, 0x00);
-
-    # MMA8452Q address, 0x1C(28)
-    # Select Configuration register, 0x0E(14)
-    #       0x00(00)    Set range to +/- 2g
-    #bus.write_byte_data(0x1C, 0x0E, 0x00)
-    $dev->writeByteData(0x0E, 0x00); #apparently 0x00 = -/+2G, 0x01 = 4G, 0x10 = 8G
-
-    # MMA8452Q address, 0x1C(28)
-    # Select Control register, 0x2A(42)
-    #       0x01(01)    Active mode
-    #bus.write_byte_data(0x1C, 0x2A, 0x01)
-    $dev->writeByteData(0x2A, 0x01);
-
-    $dev
-}
-
-sub _read_accel {
-    my ($dev) = @_;
-    # MMA8452Q address, 0x1C(28)
-    # Read data back from 0x00(0), 7 bytes
-    # Status register, X-Axis MSB, X-Axis LSB, Y-Axis MSB, Y-Axis LSB, Z-Axis MSB, Z-Axis LSB
-    #data = bus.read_i2c_block_data(0x1C, 0x00, 7)
-    my ($status, $xm, $xl, $ym, $yl, $zm, $zl) = $dev->readBlockData(0x00,7);
-
-    my $x = ($xm*256+$xl)/16; $x -= 4096 if $x > 2047;
-    my $y = ($ym*256+$yl)/16; $y -= 4096 if $y > 2047;
-    my $z = ($zm*256+$zl)/16; $z -= 4096 if $z > 2047;
-    $_ /= 1000 for $x, $y, $z;
-
-    +{ x => $x, y => $y, z => $z };
 }
 
 __DATA__
