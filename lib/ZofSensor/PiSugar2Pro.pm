@@ -21,8 +21,10 @@ sub new {
 sub read {
     my $self = shift;
     +{
-        battery_percent => $self->_read_battery_percent,
-        battery_voltage => $self->_read_voltage,
+        battery_percent_precise => $self->_read_battery_percent,
+        battery_voltage_precise => $self->_read_voltage,
+        battery_percent => sprintf('%.2f', $self->_read_battery_percent||0),
+        battery_voltage => sprintf('%.2f', $self->_read_voltage||0),
         is_charging     => $self->_read_is_charging,
     }
 }
@@ -39,8 +41,13 @@ sub _setup_battery {
 # https://github.com/PiSugar/PiSugar/wiki/PiSugar-2-%28Pro%29-I2C-Manual#step-4--read-registers-0xdc-and-0xdd
 sub _read_is_charging {
     my $self = shift;
-    if (    $self->_dev->readByteData(0xdc) == 0xff
-        and $self->_dev->readByteData(0xdd) == 0x1f) {
+    if (
+        # according to docs, the 0xdc is meant to be 0xFF for charging, but
+        # in practice it looks like it may be indicating charge level instead
+        # $self->_dev->readByteData(0xdc) == 0xff
+        # and
+        $self->_dev->readByteData(0xdd) == 0x1f
+    ) {
         return 1
     }
     else {
@@ -66,12 +73,18 @@ sub _read_battery_percent {
     # manually collected data { Voltage => battery % }
     my @battery_curve = (
         { 6          => 100},
+        { 3.85547125 => 84 },
         { 3.85385995 => 83 },
         { 3.83022755 => 80 },
+        { 3.80928065 => 79 },
         { 3.8025669  => 77 },
         { 3.7934362  => 76 },
         { 3.631232   => 64 },
         { 3.5060877  => 35 },
+        { 3.4931973  => 32 },
+        { 3.47788995 => 28 },
+        { 3.46285115 => 25 },
+        { 3.4287453  => 19 },
         { 0          => 0  },
     );
 

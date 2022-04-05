@@ -13,12 +13,14 @@ use Time::HiRes qw//;
 use Encode qw/decode_utf8/;
 
 use ZofSensor::Accel;
+use ZofSensor::PiSugar2Pro;
 
 my $GPS = GPSD::Parse->new;
 my $HID_KBD_AFTER_START = 0;
 my $HIDE_KBD_AFTER = time + 10;
 
 my $ACCEL = ZofSensor::Accel->new;
+my $SUGAR = ZofSensor::PiSugar2Pro->new;
 
 get '/' => sub ($c) {
     $ACCEL->save_correction;
@@ -132,6 +134,7 @@ websocket '/gps' => sub ($c) {
 
             wifi => _get_wifi(),
             accel => $ACCEL->read,
+            sugar => $SUGAR->read,
         }});
     });
 };
@@ -273,12 +276,39 @@ __DATA__
         line-height: 40px;
     }
     #brightness a:last-child { border-right: 0 }
-    #wifi {
+
+
+    #sensors {
         width: 399px;
-        height: 439px;
+        height: 40px;
+        line-height: 40px;
         position: absolute;
         left: 400px;
         top: 0px;
+        background: #dfd;
+        text-align: left;
+        font-size: 120%;
+        font-weight: bold;
+    }
+
+    #sugar-voltage {
+        position: absolute;
+        left: 10px;
+        top: 0;
+    }
+
+    #sugar-percent {
+        position: absolute;
+        left: 75px;
+        top: 0;
+    }
+
+    #wifi {
+        width: 399px;
+        height: 399px;
+        position: absolute;
+        left: 400px;
+        top: 40px;
         background: #fdd;
         text-align: left;
         overflow: auto;
@@ -505,6 +535,12 @@ __DATA__
       ><a href="?brightness=255" id="brightness-sunny"
         class="ajax-button">☀</a
     ></div>
+
+    <div id="sensors">
+        <div id="sugar-voltage"></div>
+        <div id="sugar-percent"></div>
+    </div>
+
     <div id="wifi">
         <div id="wifi-n"></div>
         <div id="wifi-open"></div>
@@ -564,6 +600,10 @@ __DATA__
         byid('accel').style.marginBottom  = (data.accel.x*60) + 'px';
         byid('accel').style.marginLeft    = (data.accel.y*-60) + 'px';
 
+        byid('sugar-voltage').innerHTML = data.sugar.battery_voltage + 'V';
+        byid('sugar-percent').innerHTML = data.sugar.battery_percent
+            + '% ' + (data.sugar.is_charging ? '🗲' : '');
+
         byid('wifi-n').innerHTML  = 'Open: '
             + data.wifi.n_open + '/' +  data.wifi.n_all;
 
@@ -585,7 +625,7 @@ __DATA__
         }
         byid('wifi-all').innerHTML = wifi_all_html + '</table>';
 
-        byid('debug').innerHTML = event.data;
+        //byid('debug').innerHTML = event.data;
 
         ws.send('poll')
     };
