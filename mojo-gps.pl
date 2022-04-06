@@ -23,6 +23,7 @@ use ZofSensor::UV;
 use ZofSensor::DHT11;
 
 my $GPS = GPSD::Parse->new;
+my $IS_BUZZER_ACTIVE = 1;
 my $HID_KBD_AFTER_START = 0;
 my $HIDE_KBD_AFTER = time + 10;
 my $IS_CAR_STOPPED    = 0;
@@ -54,6 +55,16 @@ get '/' => sub ($c) {
     }
     if ($c->param('hide_kbd')) {
         hide_keyboard();
+        return $c->redirect_to('/');
+    }
+
+    if ($c->param('off_buzzer')) {
+        $IS_BUZZER_ACTIVE = 0;
+        $BUZZER->buzz_off;
+        return $c->redirect_to('/');
+    }
+    if ($c->param('on_buzzer')) {
+        $IS_BUZZER_ACTIVE = 1;
         return $c->redirect_to('/');
     }
 
@@ -148,7 +159,9 @@ websocket '/gps' => sub ($c) {
         }
 
         my $accel_data = $ACCEL->read;
-        $accel_data->{y} > .5 ? $BUZZER->buzz_on : $BUZZER->buzz_off;
+        if ($IS_BUZZER_ACTIVE) {
+            $accel_data->{y} > .5 ? $BUZZER->buzz_on : $BUZZER->buzz_off;
+        }
 
         my @sats = values %{$GPS->satellites || {}};
 
@@ -168,6 +181,8 @@ websocket '/gps' => sub ($c) {
                   : $tpv->{mode} == 3 ? '3D' : $tpv->{mode},
             sats_used   => scalar(grep   $_->{used}, @sats),
             sats_unused => scalar(grep ! $_->{used}, @sats),
+
+            buzzer => $IS_BUZZER_ACTIVE ? 1 : 0,
 
             wifi => _get_wifi(),
             accel => $accel_data,
@@ -297,6 +312,31 @@ __DATA__
         border: 1px solid #000;
     }
 
+    #button-off-buzzer,
+    #button-on-buzzer {
+        font-size: 200%;
+        color: #000;
+        text-decoration: none!important;
+        background: #cc0;
+        position: absolute;
+        left: 350px;
+        top: 185px;
+        display: block;
+        line-height: 40px;
+        height: 40px;
+        width: 40px;
+        font-family: sans-serif;
+        border: 1px solid #000;
+        z-index: 40;
+    }
+
+    #button-off-buzzer {
+
+    }
+    #button-on-buzzer {
+        top: 340px;
+    }
+
     #brightness {
         width: 399px;
         height: 40px;
@@ -401,6 +441,7 @@ __DATA__
     #info-lat,
     #info-lon,
     #info-alt,
+    #info-buzzer,
     #info-angle,
     #info-lag,
     #info-mode {
@@ -409,7 +450,8 @@ __DATA__
         font-size: 150%;
     }
     #info-sats,
-    #info-speed {
+    #info-speed,
+    #info-buzzer {
         left:  0px;
         right: 0px;
         top:   18px;
@@ -419,6 +461,10 @@ __DATA__
     #info-sats {
         top: 0;
         font-size: 130%;
+    }
+    #info-buzzer {
+        top: 80px;
+        font-size: 200%;
     }
     #info-climb {
         right: 5px;
@@ -559,12 +605,20 @@ __DATA__
 
         <a href="?reboot=1"   id="button-reboot"
           class="ajax-button">↻</a>
+
+
+        <a href="?off_buzzer=1" id="button-off-buzzer"
+            class="ajax-button">&#x1F515;</a>
+        <a href="?on_buzzer=1" id="button-on-buzzer"
+            class="ajax-button">&#x1F514;</a>
+
         <div id="info-sats"></div>
         <div id="info-speed"></div>
         <div id="info-climb"></div>
         <div id="info-lat"></div>
         <div id="info-lon"></div>
         <div id="info-alt"></div>
+        <div id="info-buzzer"></div>
 
         <div id="accel"></div>
 
@@ -656,6 +710,8 @@ __DATA__
         byid('info-alt').innerHTML = '↑' + data.alt + 'm';
         byid('info-lat').innerHTML   = 'LAT: '   + data.lat;
         byid('info-lon').innerHTML   = 'LON: '   + data.lon;
+        byid('info-buzzer').innerHTML   = data.buzzer
+            ? "\u{1F514}" : "\u{1F515}";
         byid('info-angle').innerHTML  = '∠'   + data.angle + '°';
         byid('info-mode').innerHTML  = 'Mode: '   + data.mode;
 
