@@ -7,14 +7,16 @@ use 5.020;
 use Mojo::Collection qw/c/;
 use Device::SMBus;
 use Time::HiRes qw//;
+use Math::Trig qw/atan/;
 use ZofSensor::Accel::Reading;
 
+has axis => sub { +{ x => 'x', y => 'z', z => 'y'} };
 has 'dev_addr' => 0x1d;
 has 'dev_path' => '/dev/i2c-3';
-has 'smooth_over_seconds' => 1;
+has 'smooth_over_seconds' => .25;
 has '_readings' => sub { c };
 has [qw/_dev/];
-has [qw/x_correction  y_correction  z_correction/] => 0;
+has [qw/_theta_x  _theta_y/] => 0;
 
 sub new {
     my ($class, %args) = @_;
@@ -41,9 +43,8 @@ sub read {
 sub save_correction {
     my $self = shift;
     my $reading = $self->_read_accel(no_correction => 1);
-    $self->x_correction($reading->x);
-    $self->y_correction($reading->y);
-    $self->z_correction(1-$reading->z); # z is expected to have 1g
+    $self->_theta_x($reading->z == 0 ? 0 : atan($reading->x/$reading->z));
+    $self->_theta_y($reading->z == 0 ? 0 : atan($reading->y/$reading->z));
 }
 
 sub _setup_accel {
@@ -88,13 +89,25 @@ sub _read_accel {
     my $z = ($zm*256+$zl)/16; $z -= 4096 if $z > 2047;
     $_ /= 1000 for $x, $y, $z;
 
+    # remap sensor axis (helps when mounted sideways)
+    my $axis = $self->axis;
+    my ($xf, $yf, $zf);
+    $xf = ($axis->{x}//'') eq 'y' ? $y : ($axis->{x}//'') eq 'z' ? $z : $x;
+    $yf = ($axis->{y}//'') eq 'x' ? $x : ($axis->{y}//'') eq 'z' ? $z : $y;
+    $zf = ($axis->{z}//'') eq 'y' ? $y : ($axis->{z}//'') eq 'x' ? $x : $z;
+
+    my ($x_res, $y_res, $z_res) = ($xf, $yf, $zf);
     unless ($args{no_correction}) {
-        $x -= $self->x_correction;
-        $y -= $self->y_correction;
-        $z -= $self->z_correction;
+        my $thy = $self->_theta_y;
+        my $thx = $self->_theta_x;
+        $y_res = $yf*cos($thy) - $zf*sin($thy);
+        $x_res = $xf*cos($thx) - $zf*sin($thx);
+
+        # XXX TODO: this is not accurate because we're ignoring X component
+        $z_res = $yf*sin($thy) + $zf*cos($thy);
     }
 
-    ZofSensor::Accel::Reading->new(x => $x, y => $y, z => $z,
+    ZofSensor::Accel::Reading->new(x => $x_res, y => $y_res, z => $z_res,
         time => Time::HiRes::time);
 }
 

@@ -12,19 +12,31 @@ use List::MoreUtils qw/natatime/;
 use Time::HiRes qw//;
 use Encode qw/decode_utf8/;
 
+use constant DHT11_DATA_FILE =>'/home/zoffix/gps-work/cron/temp-humidity.json';
+
 use ZofSensor::Accel;
 use ZofSensor::PiSugar2Pro;
 use ZofSensor::HT16K33LED8x8Matrix;
 use ZofSensor::ActiveBuzzer;
+use ZofSensor::LightSensor;
+use ZofSensor::UV;
+use ZofSensor::DHT11;
 
 my $GPS = GPSD::Parse->new;
 my $HID_KBD_AFTER_START = 0;
 my $HIDE_KBD_AFTER = time + 10;
+my $IS_CAR_STOPPED    = 0;
+my $CAR_STOPPED_SINCE = 0;
+my $CALLIBRATE_ACCEL_NEXT_STOP = 1;
+my $kmh = 3.6; # m per s to km per h convertion ratio
 
-my $ACCEL = ZofSensor::Accel->new;
-my $SUGAR = ZofSensor::PiSugar2Pro->new;
+my $ACCEL  = ZofSensor::Accel->new(axis => { y => 'z', z => 'y'});
+my $SUGAR  = ZofSensor::PiSugar2Pro->new;
 my $MATRIX = ZofSensor::HT16K33LED8x8Matrix->new;
 my $BUZZER = ZofSensor::ActiveBuzzer->new;
+my $LIGHT  = ZofSensor::LightSensor->new;
+my $UV     = ZofSensor::UV->new;
+my $DHT11  = ZofSensor::DHT11->new(cron_data_file => DHT11_DATA_FILE);
 
 get '/' => sub ($c) {
     $ACCEL->save_correction;
@@ -67,7 +79,11 @@ get '/' => sub ($c) {
 
 websocket '/gps' => sub ($c) {
     $c->on(message => sub ($c, $msg) {
-        $GPS->poll;
+        {
+            # Use of uninitialized value $lat in pattern match (m//) at /usr/local/share/perl/5.34.0/GPSD/Parse.pm line 186, <GEN1> chunk 132
+            local $SIG{__WARN__} = sub {};
+            $GPS->poll;
+        }
         if (not $HID_KBD_AFTER_START and time > $HIDE_KBD_AFTER) {
             # We do this timed stuff, because `onboard` starts a bit late
             # so hiding it from shell start script doesn't quite work
@@ -110,21 +126,35 @@ websocket '/gps' => sub ($c) {
         my $vv = $tpv->{climb}//0;
         my $deg = 180 / 3.1415926535; # 180/pi = rads to deg
         # round down <10km/h horizontal velocity, to account for noise:
-        my $angle = $hv < 10/(18/5) ? 0 : atan($vv/$hv)*$deg;
+        my $angle = $hv*$kmh < 10 ? 0 : atan($vv/$hv)*$deg;
 
-        # re-callibrate accelerometer offset, if our speed is less than 1km/h
-        # and we have a GPS fix
-        $ACCEL->save_correction
-            if $hv < 1/(18/5) and ($tpv->{mode}||0) > 1;
+        # consider car stopped if we got a GPS fix
+        # and are below 3km/h to account for noise
+        if (($tpv->{mode}||0) > 1 and $hv*$kmh < 3) {
+            $CAR_STOPPED_SINCE = Time::HiRes::time unless $IS_CAR_STOPPED;
+            $IS_CAR_STOPPED    = 1;
+        }
+        else {
+            $IS_CAR_STOPPED = 0;
+            $CALLIBRATE_ACCEL_NEXT_STOP = 1;
+        }
+
+        # re-callibrate accelerometer offset, if we're stopped for a while
+        if ($IS_CAR_STOPPED and $CALLIBRATE_ACCEL_NEXT_STOP
+            and Time::HiRes::time() - $CAR_STOPPED_SINCE > 5
+        ) {
+            $ACCEL->save_correction;
+            $CALLIBRATE_ACCEL_NEXT_STOP = 0;
+        }
 
         my $accel_data = $ACCEL->read;
-        $accel_data->{x} < -.5 ? $BUZZER->buzz_on : $BUZZER->buzz_off;
+        $accel_data->{y} > .5 ? $BUZZER->buzz_on : $BUZZER->buzz_off;
 
         my @sats = values %{$GPS->satellites || {}};
 
         $c->send({json => {
             time    => Time::HiRes::time,
-            speed   => sprintf('%.1f', $tpv->{speed}*(18 / 5)), # m/s to km/h
+            speed   => sprintf('%.1f', $tpv->{speed}*$kmh), # m/s to km/h
             compass     => $tpv->{track},
             compass_mag => $tpv->{magtrack},
             climb       => sprintf('%.1f', $tpv->{climb}),
@@ -142,6 +172,9 @@ websocket '/gps' => sub ($c) {
             wifi => _get_wifi(),
             accel => $accel_data,
             sugar => $SUGAR->read,
+            light => $LIGHT->read,
+            uv    => $UV->read,
+            dht11 => $DHT11->read,
         }});
     });
 };
@@ -303,10 +336,29 @@ __DATA__
         left: 10px;
         top: 0;
     }
-
     #sugar-percent {
         position: absolute;
-        left: 75px;
+        left: 65px;
+        top: 0;
+    }
+    #sensor-light {
+        position: absolute;
+        left: 150px;
+        top: 0;
+    }
+    #sensor-uv {
+        position: absolute;
+        left: 210px;
+        top: 0;
+    }
+    #sensor-temp {
+        position: absolute;
+        left: 250px;
+        top: 0;
+    }
+    #sensor-humidity {
+        position: absolute;
+        left: 310px;
         top: 0;
     }
 
@@ -546,6 +598,10 @@ __DATA__
     <div id="sensors">
         <div id="sugar-voltage"></div>
         <div id="sugar-percent"></div>
+        <div id="sensor-light"></div>
+        <div id="sensor-uv"></div>
+        <div id="sensor-temp"></div>
+        <div id="sensor-humidity"></div>
     </div>
 
     <div id="wifi">
@@ -604,12 +660,18 @@ __DATA__
         byid('info-mode').innerHTML  = 'Mode: '   + data.mode;
 
         // marginTop did not work apparently because we use `bottom`
-        byid('accel').style.marginBottom  = (data.accel.x*60) + 'px';
-        byid('accel').style.marginLeft    = (data.accel.y*-60) + 'px';
+        byid('accel').style.marginBottom  = (data.accel.y*-60) + 'px';
+        byid('accel').style.marginLeft    = (data.accel.x*-60) + 'px';
 
         byid('sugar-voltage').innerHTML = data.sugar.battery_voltage + 'V';
         byid('sugar-percent').innerHTML = data.sugar.battery_percent
-            + '% ' + (data.sugar.is_charging ? '🗲' : '');
+            + '%' + (data.sugar.is_charging ? '↯' : '');
+
+        byid('sensor-light').innerHTML = "\u{1F4A1}" + data.light.raw;
+        byid('sensor-uv').innerHTML = "\u{2600}" + data.uv.raw;
+        byid('sensor-temp').innerHTML = "\u{1F321}" + data.dht11.temp;
+        byid('sensor-humidity').innerHTML = "\u{1F4A7}" + data.dht11.humidity;
+
 
         byid('wifi-n').innerHTML  = 'Open: '
             + data.wifi.n_open + '/' +  data.wifi.n_all;

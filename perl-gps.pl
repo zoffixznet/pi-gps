@@ -7,9 +7,79 @@ use lib qw/lib/;
 # use GPSD::Parse;
 use Time::HiRes qw//;
 use List::MoreUtils qw/natatime/;
+use Math::Trig qw/atan :pi/;
+
+
+use ZofSensor::Accel;
+my $ac = ZofSensor::Accel->new(axis => { y => 'z', z => 'y'});
+
+while (1) {
+    my $read = $ac->read;
+    printf "x:%f y:%f z:%f\n", @$read{qw/x y z/};
+}
+
+#my $read = $ac->_read_accel(no_correction => 1);
+# printf "x:%f y:%f z:%f\n", map $read->$_, qw/x y z/;
+
+# # x:0.051000 y:0.955000 z:-0.386000
+# # need: x:0 y:0 z:1
+# # my $x = 0.034000; my $y = -0.446000; my $z = 0.924000;
+
+# # $_ *= 10 for $x, $y, $z;
+# my ($x, $y, $z) = do_corrections(map $read->$_, qw/x y z/);
+
+# printf "x:%f y:%f z:%f\n", $x, $y, $z;
+
+# sub do_corrections {
+#     my ($x, $y, $z) = @_;
+#     my ($xn, $yn, $zn) = ($x, $y, $z);
+
+#     my $thy = $z == 0 ? 0 : atan($y/$z);
+#     my $thx = $z == 0 ? 0 : atan($x/$z);
+#     $thx = 0.0299696108215382; $thy = -0.431456818106889;
+
+#     # my $thx = 0.0367799429540424;
+#     # my $thy = -0.449699080382262;
+#     say "\$thx = $thx; \$thy = $thy;";
+
+#     $yn = $y*cos($thy) - $z*sin($thy);
+#     $zn = $y*sin($thy) + $z*cos($thy);
+#     $xn = $x*cos($thx) - $zn*sin($thx);
+#     # $zn = $x*sin($thx) + $zn*cos($thx);
+
+#     # $zn = $y/sin($th1);
+
+
+#     # my $th2 = pip2 - $th1;
+#     # $yn = $y/sin($th2);
+
+#     ($xn, $yn, $zn);
+# }
+
+
+
+__END__
+
+use HiPi qw( :mcp3adc );
+use HiPi::Interface::MCP3ADC;
+my $adc = HiPi::Interface::MCP3ADC->new(
+    devicename   => '/dev/spidev0.0',
+    ic           => MCP3008,
+);
+
+while(1) {
+    say $adc->read( MCP3ADC_CHAN_0 );
+    Time::HiRes::sleep(.5);
+}
+
+
+__END__
+
 
 use ZofSensor::ActiveBuzzer;
 my $buzz = ZofSensor::ActiveBuzzer->new;
+$buzz->buzz_on;
+sleep 1;
 $buzz->buzz_off;
 
 
