@@ -313,11 +313,12 @@ __DATA__
     }
 
     #button-off-buzzer,
-    #button-on-buzzer {
+    #button-on-buzzer,
+    #button-full-screen {
         font-size: 200%;
         color: #000;
         text-decoration: none!important;
-        background: #cc0;
+        background: #eee;
         position: absolute;
         left: 350px;
         top: 185px;
@@ -329,12 +330,14 @@ __DATA__
         border: 1px solid #000;
         z-index: 40;
     }
-
-    #button-off-buzzer {
-
-    }
     #button-on-buzzer {
         top: 340px;
+    }
+    #button-full-screen {
+        top: 262px;
+        width: 30px;
+        left: 360px;
+        font-size: 160%;
     }
 
     #brightness {
@@ -609,6 +612,11 @@ __DATA__
 
         <a href="?off_buzzer=1" id="button-off-buzzer"
             class="ajax-button">&#x1F515;</a>
+        <a href="#" id="button-full-screen"
+            onclick="window.fullScreen
+                ? document.exitFullscreen()
+                : document.documentElement.requestFullscreen()
+                    .catch(error =>  console.log(error));">&#x1F5A5;</a>
         <a href="?on_buzzer=1" id="button-on-buzzer"
             class="ajax-button">&#x1F514;</a>
 
